@@ -22,6 +22,8 @@ import os
 import pickle
 import io
 
+from kditransform import KDITransformer
+
 class CustomUnpickler(pickle.Unpickler):
     def find_class(self, module, name):
         if name == 'Manager':
@@ -256,11 +258,18 @@ class TabPFNClassifier(BaseEstimator, ClassifierMixin):
         if self.no_grad:
             X = check_array(X, force_all_finite=False)
             X_full = np.concatenate([self.X_, X], axis=0)
+
+            #print("apply KDITransformer no_grad")
+            #X_full = KDITransformer().fit_transform(X_full)
+
             X_full = torch.tensor(X_full, device=self.device).float().unsqueeze(1)
         else:
             assert (torch.is_tensor(self.X_) & torch.is_tensor(X)), "If no_grad is false, this function expects X as " \
                                                                     "a tensor to calculate a gradient"
             X_full = torch.cat((self.X_, X), dim=0).float().unsqueeze(1).to(self.device)
+
+            #print("apply KDITransformer grad")
+            #X_full = torch.from_numpy(KDITransformer().fit_transform(X_full.detach().numpy()))
 
             if int(torch.isnan(X_full).sum()):
                 print('X contains nans and the gradient implementation is not designed to handel nans.')
@@ -391,7 +400,10 @@ def transformer_predict(model, eval_xs, eval_ys, eval_position,
                 pt = QuantileTransformer(output_distribution='normal')
             elif preprocess_transform == 'robust' or preprocess_transform == 'robust_all':
                 pt = RobustScaler(unit_variance=True)
+            elif preprocess_transform == 'kdi' or preprocess_transform == 'kdi_all':
+                pt = KDITransformer(output_distribution='normal')
 
+        #eval_xs = torch.from_numpy(KDITransformer().fit_transform(eval_xs.detach().numpy()))
         # eval_xs, eval_ys = normalize_data(eval_xs), normalize_data(eval_ys)
         eval_xs = normalize_data(eval_xs, normalize_positions=-1 if normalize_with_test else eval_position)
 
@@ -458,7 +470,7 @@ def transformer_predict(model, eval_xs, eval_ys, eval_position,
         if i == 1:
             return 'none'
 
-    preprocess_transform_configurations = ['none', 'power_all'] if preprocess_transform == 'mix' else [preprocess_transform]
+    preprocess_transform_configurations = ['none', 'power_all', 'kdi_all'] if preprocess_transform == 'mix' else [preprocess_transform]
 
     if seed is not None:
         torch.manual_seed(seed)
